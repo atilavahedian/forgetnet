@@ -1,5 +1,7 @@
 # ForgetNet
 
+![ForgetNet plastic memory overview](docs/assets/forgetnet-research-banner.png)
+
 ForgetNet is a pure-PyTorch research repo for a contrarian sequence-modeling thesis:
 
 > Long-context models should not only scale attention. They should learn what is worth remembering, when to overwrite stale facts, and when to forget.
@@ -7,6 +9,10 @@ ForgetNet is a pure-PyTorch research repo for a contrarian sequence-modeling the
 The core model combines local causal attention with a fixed-size differentiable memory bank. At every token, the model reads from memory, estimates surprise, and updates memory slots through learned write and erase gates.
 
 This is a serious v1 research implementation, not a state-of-the-art claim. The repo is built to make the idea easy to inspect, train, ablate, and falsify on controlled long-memory tasks.
+
+**Core idea:** keep attention local, make memory bounded, and force the model to learn overwrite/forget behavior under controlled tests.
+
+**Current artifact:** a local Apple Silicon sanity run where a 100-step `changing_facts` checkpoint learns the overwrite task while remaining untrained on the rest of the suite.
 
 ## Architecture
 
@@ -24,6 +30,8 @@ flowchart LR
     W --> M["updated memory M_{t+1}"]
     R --> W
 ```
+
+The banner above is a conceptual visual; the Mermaid graph and [technical note](docs/technical_note.md) are the source of truth for the implemented data flow and update equations.
 
 ## Install
 
@@ -108,6 +116,8 @@ results/plot_data.json
 ```
 
 The committed `results/` artifacts are a small local sanity run, not a benchmark claim. They compare a fresh ForgetNet eval against a 100-step `changing_facts` checkpoint on Apple Silicon MPS. In that run, the trained checkpoint reached `0.6125` accuracy on `changing_facts` over 160 held-out examples; the other tasks remained low, which is expected because the checkpoint was not trained on the full suite.
+
+![ForgetNet local sanity results](results/accuracy_by_task.png)
 
 ## Tests
 
