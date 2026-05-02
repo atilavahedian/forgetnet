@@ -1,0 +1,62 @@
+[
+  {
+    "model": "forgetnet",
+    "source": "fresh",
+    "task": "associative_lookup",
+    "accuracy": 0.0
+  },
+  {
+    "model": "forgetnet",
+    "source": "fresh",
+    "task": "changing_facts",
+    "accuracy": 0.00625
+  },
+  {
+    "model": "forgetnet",
+    "source": "fresh",
+    "task": "needle_recall",
+    "accuracy": 0.0
+  },
+  {
+    "model": "forgetnet",
+    "source": "fresh",
+    "task": "multi_hop",
+    "accuracy": 0.00625
+  },
+  {
+    "model": "forgetnet",
+    "source": "fresh",
+    "task": "length_extrapolation",
+    "accuracy": 0.0
+  },
+  {
+    "model": "forgetnet",
+    "source": "forgetnet-changing_facts-20260502-110834",
+    "task": "associative_lookup",
+    "accuracy": 0.0375
+  },
+  {
+    "model": "forgetnet",
+    "source": "forgetnet-changing_facts-20260502-110834",
+    "task": "changing_facts",
+    "accuracy": 0.6125
+  },
+  {
+    "model": "forgetnet",
+    "source": "forgetnet-changing_facts-20260502-110834",
+    "task": "needle_recall",
+    "accuracy": 0.05625
+  },
+  {
+    "model": "forgetnet",
+    "source": "forgetnet-changing_facts-20260502-110834",
+    "task": "multi_hop",
+    "accuracy": 0.0125
+  },
+  {
+    "model": "forgetnet",
+    "source": "forgetnet-changing_facts-20260502-110834",
+    "task": "length_extrapolation",
+    "accuracy": 0.0125
+  }
+]
