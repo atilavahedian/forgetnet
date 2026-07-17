@@ -55,6 +55,7 @@ def _add_train_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--seq-len", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--aux-loss-weight", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output-dir", default="runs")
@@ -110,6 +111,7 @@ def _train_config(args: argparse.Namespace) -> TrainConfig:
         batch_size=args.batch_size,
         seq_len=args.seq_len,
         lr=args.lr,
+        aux_loss_weight=args.aux_loss_weight,
         seed=args.seed,
         device=args.device,
         output_dir=args.output_dir,

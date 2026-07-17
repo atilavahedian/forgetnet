@@ -13,6 +13,7 @@ class MemoryStats:
     final_memory_shape: tuple[int, int, int]
     write_frequency: float
     mean_write_strength: float
+    mean_surprise: float
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class ForgetNet(nn.Module):
         answer_logits: list[torch.Tensor] = []
         aux_logits: list[torch.Tensor] = []
         write_strengths: list[torch.Tensor] = []
+        surprises: list[torch.Tensor] = []
 
         for step in range(seq_len):
             current = embeddings[:, step, :]
@@ -85,14 +87,13 @@ class ForgetNet(nn.Module):
             hidden = self.norm(local + self.read_out(read))
 
             token_logits = self.token_head(hidden)
-            aux_logits.append(token_logits)
             answer_logits.append(self.answer_head(hidden))
 
-            with torch.no_grad():
-                probs = F.softmax(token_logits, dim=-1)
-                surprise = 1.0 - probs.gather(1, input_ids[:, step].unsqueeze(1))
+            surprise = self._causal_surprise(aux_logits, input_ids[:, step])
             memory, write_strength = self._write_memory(hidden, read, memory, surprise, input_ids[:, step], step)
+            aux_logits.append(token_logits)
             write_strengths.append(write_strength)
+            surprises.append(surprise.mean())
 
             history.append(current)
             if len(history) > self.window_size:
@@ -103,12 +104,27 @@ class ForgetNet(nn.Module):
             final_memory_shape=tuple(memory.shape),
             write_frequency=float((strengths > 0.05).float().mean().detach().cpu()),
             mean_write_strength=float(strengths.mean().detach().cpu()),
+            mean_surprise=float(torch.stack(surprises).mean().detach().cpu()),
         )
         return ModelOutput(
             logits=answer_logits[-1],
             aux_logits=torch.stack(aux_logits, dim=1),
             memory_stats=stats,
         )
+
+    def _causal_surprise(
+        self,
+        previous_logits: list[torch.Tensor],
+        current_token_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        if not previous_logits:
+            return torch.ones(
+                (current_token_ids.shape[0], 1),
+                device=current_token_ids.device,
+            )
+        with torch.no_grad():
+            probabilities = F.softmax(previous_logits[-1], dim=-1)
+            return 1.0 - probabilities.gather(1, current_token_ids.unsqueeze(1))
 
     def _local_attention(self, current: torch.Tensor, history: list[torch.Tensor]) -> torch.Tensor:
         window_tokens = history[-self.window_size :] + [current]
@@ -217,12 +233,18 @@ class TinyTransformer(nn.Module):
         hidden = self.token_embedding(input_ids) + self.position_embedding(positions)
         mask = self._causal_mask(seq_len, input_ids.device)
         encoded = self.encoder(hidden, mask=mask)
+        sequence_logits = self.head(encoded)
         stats = MemoryStats(
             final_memory_shape=(batch_size, 0, self.d_model),
             write_frequency=0.0,
             mean_write_strength=0.0,
+            mean_surprise=0.0,
         )
-        return ModelOutput(logits=self.head(encoded[:, -1, :]), memory_stats=stats)
+        return ModelOutput(
+            logits=sequence_logits[:, -1, :],
+            aux_logits=sequence_logits,
+            memory_stats=stats,
+        )
 
     def _causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
         mask = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool, device=device), diagonal=1)
