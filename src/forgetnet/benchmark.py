@@ -105,7 +105,7 @@ def run_benchmark(config: BenchmarkConfig) -> Path:
         "aggregates": aggregates,
         "parameter_count_ratio": _parameter_count_ratio(aggregates),
         "ranking": ranking,
-        "deltas_from_forgetnet": _forgetnet_deltas(aggregates),
+        "paired_deltas_from_forgetnet": _paired_deltas(rows, reference_model="forgetnet"),
     }
     (benchmark_dir / "benchmark_summary.json").write_text(
         json.dumps(summary, indent=2) + "\n"
@@ -127,35 +127,39 @@ def _aggregate_model(rows: list[dict[str, Any]]) -> dict[str, Any]:
     aggregate: dict[str, Any] = {"seeds": [row["seed"] for row in rows]}
     for metric in metrics:
         values = [float(row[metric]) for row in rows]
-        standard_deviation = pstdev(values) if len(values) > 1 else 0.0
-        aggregate[metric] = {
-            "mean": mean(values),
-            "std": standard_deviation,
-            "ci95_half_width": 1.96 * standard_deviation / math.sqrt(len(values)),
-            "values": values,
-        }
+        aggregate[metric] = _summarize_values(values)
     return aggregate
 
 
-def _forgetnet_deltas(aggregates: dict[str, Any]) -> dict[str, Any]:
-    reference = aggregates.get("forgetnet")
-    if reference is None:
+def _paired_deltas(rows: list[dict[str, Any]], reference_model: str) -> dict[str, Any]:
+    reference_rows = {row["seed"]: row for row in rows if row["model"] == reference_model}
+    if not reference_rows:
         return {}
+    metrics = ("final_learned_task_accuracy", "mean_forgetting", "wall_time_seconds")
     deltas = {}
-    for model, aggregate in aggregates.items():
-        if model == "forgetnet":
+    for model in dict.fromkeys(row["model"] for row in rows):
+        if model == reference_model:
             continue
-        deltas[model] = {
-            "final_learned_task_accuracy": (
-                aggregate["final_learned_task_accuracy"]["mean"]
-                - reference["final_learned_task_accuracy"]["mean"]
-            ),
-            "mean_forgetting": (
-                aggregate["mean_forgetting"]["mean"]
-                - reference["mean_forgetting"]["mean"]
-            ),
-        }
+        model_rows = {row["seed"]: row for row in rows if row["model"] == model}
+        common_seeds = sorted(set(reference_rows) & set(model_rows))
+        deltas[model] = {"seeds": common_seeds}
+        for metric in metrics:
+            values = [
+                float(model_rows[seed][metric]) - float(reference_rows[seed][metric])
+                for seed in common_seeds
+            ]
+            deltas[model][metric] = _summarize_values(values)
     return deltas
+
+
+def _summarize_values(values: list[float]) -> dict[str, Any]:
+    standard_deviation = pstdev(values) if len(values) > 1 else 0.0
+    return {
+        "mean": mean(values),
+        "std": standard_deviation,
+        "ci95_half_width": 1.96 * standard_deviation / math.sqrt(len(values)),
+        "values": values,
+    }
 
 
 def _parameter_count_ratio(aggregates: dict[str, Any]) -> float:
