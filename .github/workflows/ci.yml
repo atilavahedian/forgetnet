@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync
+      - run: uv run pytest -q
+      - run: uv build --wheel
+      - name: Continual protocol smoke test
+        run: >-
+          uv run forgetnet continual
+          --tasks associative_lookup,changing_facts
+          --eval-tasks associative_lookup,changing_facts
+          --steps-per-task 1
+          --eval-steps 1
+          --batch-size 2
+          --seq-len 14
+          --d-model 8
+          --memory-slots 2
+          --max-seq-len 32
+          --device cpu
+          --output-dir runs/ci
+          --quiet
