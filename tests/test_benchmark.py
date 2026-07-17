@@ -6,6 +6,7 @@ from pathlib import Path
 
 from forgetnet.benchmark import BenchmarkConfig, run_benchmark
 from forgetnet.experiment import ModelConfig
+from forgetnet.plotting import plot_benchmark
 
 
 def test_benchmark_compares_models_under_shared_budget(tmp_path: Path) -> None:
@@ -46,3 +47,9 @@ def test_benchmark_compares_models_under_shared_budget(tmp_path: Path) -> None:
     assert summary["parameter_count_ratio"] >= 1.0
     with (benchmark_dir / "benchmark_runs.csv").open(newline="") as handle:
         assert len(list(csv.DictReader(handle))) == 2
+
+    plot_path = plot_benchmark(
+        benchmark_dir / "benchmark_summary.json",
+        tmp_path / "plots",
+    )
+    assert plot_path.exists()

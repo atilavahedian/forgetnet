@@ -11,7 +11,6 @@ from forgetnet.continual import ContinualConfig, run_continual
 from forgetnet.data import TASKS, make_task_batch
 from forgetnet.experiment import EvalConfig, ModelConfig, TrainConfig, evaluate, train
 from forgetnet.models import build_model
-from forgetnet.plotting import plot_runs
 from forgetnet.runtime import seed_everything, select_device
 
 
@@ -26,6 +25,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_continual_parser(subparsers)
     _add_benchmark_parser(subparsers)
     _add_plot_parser(subparsers)
+    _add_plot_benchmark_parser(subparsers)
     _add_demo_parser(subparsers)
     args = parser.parse_args(argv)
 
@@ -42,8 +42,15 @@ def main(argv: list[str] | None = None) -> None:
         run_dir = run_benchmark(_benchmark_config(args))
         print(f"Wrote benchmark summary to {run_dir / 'benchmark_summary.json'}")
     elif args.command == "plot":
+        from forgetnet.plotting import plot_runs
+
         path = plot_runs(args.runs, args.output_dir)
         print(f"Wrote plot to {path}")
+    elif args.command == "plot-benchmark":
+        from forgetnet.plotting import plot_benchmark
+
+        path = plot_benchmark(args.summary, args.output_dir)
+        print(f"Wrote benchmark plot to {path}")
     elif args.command == "demo":
         _demo(args)
     else:
@@ -145,6 +152,17 @@ def _add_plot_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPar
     parser = subparsers.add_parser("plot", help="plot accuracy from eval metrics")
     parser.add_argument("--runs", default="runs")
     parser.add_argument("--output-dir", default="results")
+
+
+def _add_plot_benchmark_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser(
+        "plot-benchmark",
+        help="plot accuracy and forgetting from a continual benchmark summary",
+    )
+    parser.add_argument("--summary", required=True)
+    parser.add_argument("--output-dir", default="results/continual-benchmark")
 
 
 def _add_demo_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
