@@ -13,9 +13,12 @@ def test_forgetnet_forward_returns_logits_and_bounded_memory_stats() -> None:
     output = model(batch.input_ids)
 
     assert output.logits.shape == (3, batch.vocab_size)
+    assert output.aux_logits is not None
+    assert output.aux_logits.shape == (3, 24, batch.vocab_size)
     assert output.memory_stats.final_memory_shape == (3, 6, 32)
     assert 0.0 <= output.memory_stats.write_frequency <= 1.0
     assert 0.0 <= output.memory_stats.mean_write_strength <= 1.0
+    assert 0.0 <= output.memory_stats.mean_surprise <= 1.0
 
 
 def test_tiny_transformer_baseline_matches_forgetnet_output_contract() -> None:
@@ -25,6 +28,8 @@ def test_tiny_transformer_baseline_matches_forgetnet_output_contract() -> None:
     output = model(batch.input_ids)
 
     assert output.logits.shape == (2, batch.vocab_size)
+    assert output.aux_logits is not None
+    assert output.aux_logits.shape == (2, 20, batch.vocab_size)
     assert output.memory_stats.final_memory_shape == (2, 0, 32)
 
 

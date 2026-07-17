@@ -32,6 +32,7 @@ class TrainConfig:
     batch_size: int = 32
     seq_len: int = 64
     lr: float = 3e-4
+    aux_loss_weight: float = 0.1
     seed: int = 42
     device: str = "auto"
     output_dir: str = "runs"
@@ -72,7 +73,9 @@ def train(config: TrainConfig) -> Path:
             vocab_size=config.model_config.vocab_size,
         ).to(device)
         output = model(batch.input_ids)
-        loss = F.cross_entropy(output.logits, batch.labels)
+        answer_loss = F.cross_entropy(output.logits, batch.labels)
+        auxiliary_loss = next_token_auxiliary_loss(output.aux_logits, batch.input_ids)
+        loss = answer_loss + config.aux_loss_weight * auxiliary_loss
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -83,9 +86,12 @@ def train(config: TrainConfig) -> Path:
         record = {
             "step": step + 1,
             "loss": float(loss.detach().cpu()),
+            "answer_loss": float(answer_loss.detach().cpu()),
+            "auxiliary_loss": float(auxiliary_loss.detach().cpu()),
             "accuracy": accuracy,
             "write_frequency": output.memory_stats.write_frequency,
             "mean_write_strength": output.memory_stats.mean_write_strength,
+            "mean_surprise": output.memory_stats.mean_surprise,
         }
         history.append(record)
         if not config.quiet:
@@ -115,6 +121,18 @@ def train(config: TrainConfig) -> Path:
     return run_dir
 
 
+def next_token_auxiliary_loss(aux_logits: torch.Tensor | None, input_ids: torch.Tensor) -> torch.Tensor:
+    if aux_logits is None:
+        raise ValueError("model must return auxiliary token logits")
+    if aux_logits.shape[:2] != input_ids.shape:
+        raise ValueError("auxiliary logits must align with input_ids")
+    if input_ids.shape[1] < 2:
+        return aux_logits.sum() * 0.0
+    predictions = aux_logits[:, :-1, :].reshape(-1, aux_logits.shape[-1])
+    targets = input_ids[:, 1:].reshape(-1)
+    return F.cross_entropy(predictions, targets)
+
+
 def evaluate(config: EvalConfig) -> Path:
     seed_everything(config.seed)
     device = select_device(config.device)
@@ -140,6 +158,7 @@ def evaluate(config: EvalConfig) -> Path:
             total = 0
             write_strengths: list[float] = []
             write_frequencies: list[float] = []
+            surprises: list[float] = []
             for step in range(config.eval_steps):
                 batch = make_task_batch(
                     task,
@@ -154,6 +173,7 @@ def evaluate(config: EvalConfig) -> Path:
                 total += int(batch.labels.numel())
                 write_strengths.append(output.memory_stats.mean_write_strength)
                 write_frequencies.append(output.memory_stats.write_frequency)
+                surprises.append(output.memory_stats.mean_surprise)
             accuracy = correct / max(1, total)
             task_metrics[task] = {
                 "accuracy": accuracy,
@@ -161,6 +181,7 @@ def evaluate(config: EvalConfig) -> Path:
                 "seq_len": seq_len,
                 "mean_write_strength": sum(write_strengths) / len(write_strengths),
                 "write_frequency": sum(write_frequencies) / len(write_frequencies),
+                "mean_surprise": sum(surprises) / len(surprises),
             }
             if task == "changing_facts":
                 task_metrics[task]["overwrite_accuracy"] = accuracy
