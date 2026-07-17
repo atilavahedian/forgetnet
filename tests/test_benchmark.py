@@ -29,15 +29,18 @@ def test_benchmark_compares_models_under_shared_budget(tmp_path: Path) -> None:
             window_size=4,
             max_seq_len=32,
         ),
+        model_widths=(("local_transformer", 12),),
     )
 
     benchmark_dir = run_benchmark(config)
     summary = json.loads((benchmark_dir / "benchmark_summary.json").read_text())
 
-    assert summary["protocol"] == "equal-update-paired-evaluation-v1"
+    assert summary["protocol"] == "equal-update-paired-evaluation-v2"
     assert summary["run_count"] == 2
     assert set(summary["aggregates"]) == {"forgetnet", "local_transformer"}
     assert len(summary["ranking"]) == 2
     assert "local_transformer" in summary["deltas_from_forgetnet"]
+    assert summary["config"]["model_widths"] == [["local_transformer", 12]]
+    assert summary["parameter_count_ratio"] >= 1.0
     with (benchmark_dir / "benchmark_runs.csv").open(newline="") as handle:
         assert len(list(csv.DictReader(handle))) == 2

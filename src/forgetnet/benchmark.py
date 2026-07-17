@@ -35,12 +35,14 @@ class BenchmarkConfig:
     output_dir: str = "runs"
     quiet: bool = True
     model_config: ModelConfig = ModelConfig(model="forgetnet")
+    model_widths: tuple[tuple[str, int], ...] = ()
 
 
 def run_benchmark(config: BenchmarkConfig) -> Path:
     _validate_config(config)
     benchmark_dir = _new_benchmark_dir(config.output_dir)
     rows: list[dict[str, Any]] = []
+    model_widths = dict(config.model_widths)
     for model_name in config.models:
         for seed in config.seeds:
             continual_config = ContinualConfig(
@@ -58,7 +60,11 @@ def run_benchmark(config: BenchmarkConfig) -> Path:
                 device=config.device,
                 output_dir=str(benchmark_dir / "runs"),
                 quiet=config.quiet,
-                model_config=replace(config.model_config, model=model_name),
+                model_config=replace(
+                    config.model_config,
+                    model=model_name,
+                    d_model=model_widths.get(model_name, config.model_config.d_model),
+                ),
             )
             run_dir = run_continual(continual_config)
             metrics = json.loads((run_dir / "metrics.json").read_text())
@@ -91,12 +97,13 @@ def run_benchmark(config: BenchmarkConfig) -> Path:
     )
     summary = {
         "kind": "continual_benchmark",
-        "protocol": "equal-update-paired-evaluation-v1",
+        "protocol": "equal-update-paired-evaluation-v2",
         "config": to_jsonable(asdict(config)),
         "run_count": len(rows),
         "paired_eval_seed": config.eval_seed,
         "rows": rows,
         "aggregates": aggregates,
+        "parameter_count_ratio": _parameter_count_ratio(aggregates),
         "ranking": ranking,
         "deltas_from_forgetnet": _forgetnet_deltas(aggregates),
     }
@@ -151,6 +158,11 @@ def _forgetnet_deltas(aggregates: dict[str, Any]) -> dict[str, Any]:
     return deltas
 
 
+def _parameter_count_ratio(aggregates: dict[str, Any]) -> float:
+    counts = [aggregate["parameter_count"]["mean"] for aggregate in aggregates.values()]
+    return max(counts) / min(counts)
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     fieldnames = [
         "model",
@@ -175,6 +187,14 @@ def _validate_config(config: BenchmarkConfig) -> None:
         raise ValueError("models must be a nonempty unique sequence")
     if not config.seeds or len(set(config.seeds)) != len(config.seeds):
         raise ValueError("seeds must be a nonempty unique sequence")
+    widths = dict(config.model_widths)
+    if len(widths) != len(config.model_widths):
+        raise ValueError("model_widths must contain unique model names")
+    unknown = set(widths) - set(config.models)
+    if unknown:
+        raise ValueError(f"model_widths contains models outside the benchmark: {sorted(unknown)}")
+    if any(width < 1 for width in widths.values()):
+        raise ValueError("model widths must be positive")
 
 
 def _new_benchmark_dir(root: str | Path) -> Path:

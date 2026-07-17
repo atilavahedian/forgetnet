@@ -119,6 +119,11 @@ def _add_benchmark_parser(subparsers: argparse._SubParsersAction[argparse.Argume
         help="compare models under equal sequential-training and paired-evaluation budgets",
     )
     parser.add_argument("--models", default="forgetnet,no_forget,local_transformer")
+    parser.add_argument(
+        "--model-widths",
+        default="",
+        help="optional model=width pairs, for example forgetnet=64,local_transformer=48",
+    )
     parser.add_argument("--seeds", default="42,43,44")
     parser.add_argument("--tasks", default=",".join(TASKS[:-1]))
     parser.add_argument("--eval-tasks", default=",".join(TASKS))
@@ -232,11 +237,24 @@ def _benchmark_config(args: argparse.Namespace) -> BenchmarkConfig:
         output_dir=args.output_dir,
         quiet=not args.show_progress,
         model_config=_model_config(args),
+        model_widths=_model_widths(args.model_widths),
     )
 
 
 def _csv_tasks(raw: str) -> tuple[str, ...]:
     return tuple(task.strip() for task in raw.split(",") if task.strip())
+
+
+def _model_widths(raw: str) -> tuple[tuple[str, int], ...]:
+    pairs = []
+    for item in raw.split(","):
+        if not item.strip():
+            continue
+        model, separator, width = item.partition("=")
+        if not separator or not model.strip() or not width.strip():
+            raise ValueError(f"invalid model width: {item!r}")
+        pairs.append((model.strip(), int(width)))
+    return tuple(pairs)
 
 
 def _demo(args: argparse.Namespace) -> None:
