@@ -24,10 +24,17 @@ r_t = beta_t M_t
 h_t = LayerNorm(a_t + W_r r_t)
 ```
 
-The model predicts from `h_t`, but it also uses its token prediction confidence to build a surprise signal:
+The model predicts the next token from `h_t`. At the following step, that prior prediction supplies a temporally causal surprise signal for the observed token:
 
 ```text
-s_t = 1 - p_theta(x_t | h_t)
+q_t = p_theta(x_{t+1} | h_t)
+s_t = 1 - q_{t-1}(x_t)
+```
+
+The first token receives surprise `1`. The predictive head is trained with next-token cross-entropy and the answer objective remains the primary loss:
+
+```text
+L = L_answer + lambda_aux L_next-token
 ```
 
 The surprise value modulates memory writes. The write path computes a gate, erase vector, write vector, and slot allocation:
@@ -79,12 +86,21 @@ Evaluation records:
 - wall-clock time,
 - mean write strength,
 - write frequency.
+- mean causal surprise.
+
+Sequential evaluation additionally records the accuracy matrix before training and after every task, then derives:
+
+- final learned-task accuracy,
+- immediate post-training accuracy,
+- forgetting as the best post-learning accuracy minus final accuracy,
+- backward transfer as final accuracy minus immediate post-training accuracy,
+- retention ratio.
 
 These metrics are intentionally simple. The goal is to make failure obvious before adding harder datasets.
 
 ## Future Work
 
-- Train larger sweeps across matched parameter budgets.
+- Train larger sweeps across matched parameter and compute budgets.
 - Add real text tasks after synthetic memory behavior is stable.
 - Compare against Mamba-style and Hopfield-style memory modules.
 - Profile memory update overhead and add a vectorized recurrent path.

@@ -12,7 +12,7 @@ This is a serious v1 research implementation, not a state-of-the-art claim. The 
 
 **Core idea:** keep attention local, make memory bounded, and force the model to learn overwrite/forget behavior under controlled tests.
 
-**Current artifact:** a local Apple Silicon sanity run where a 100-step `changing_facts` checkpoint learns the overwrite task while remaining untrained on the rest of the suite.
+**Current artifact:** a three-seed, parameter-matched continual-learning pilot comparing ForgetNet, its no-forget ablation, and a local Transformer under equal update and evaluation budgets.
 
 ## Architecture
 
@@ -49,6 +49,25 @@ Train the plastic-memory model:
 uv run forgetnet train --task changing_facts --model forgetnet --steps 100
 ```
 
+Measure retention while tasks arrive sequentially:
+
+```bash
+uv run forgetnet continual \
+  --tasks associative_lookup,changing_facts,needle_recall \
+  --steps-per-task 100
+```
+
+Compare parameter-matched models across seeds:
+
+```bash
+uv run forgetnet benchmark \
+  --models forgetnet,no_forget,local_transformer \
+  --model-widths forgetnet=64,no_forget=64,local_transformer=48 \
+  --seeds 2027,2028,2029 \
+  --tasks associative_lookup,changing_facts,needle_recall \
+  --steps-per-task 100
+```
+
 Evaluate all synthetic memory tasks:
 
 ```bash
@@ -65,6 +84,14 @@ Plot evaluation results:
 
 ```bash
 uv run forgetnet plot --runs runs/ --output-dir results/
+```
+
+Plot a continual benchmark summary:
+
+```bash
+uv run forgetnet plot-benchmark \
+  --summary runs/<benchmark>/benchmark_summary.json \
+  --output-dir results/continual-benchmark
 ```
 
 Run one interpretable example:
@@ -115,7 +142,17 @@ results/accuracy_by_task.png
 results/plot_data.json
 ```
 
-The committed `results/` artifacts are a small local sanity run, not a benchmark claim. They compare a fresh ForgetNet eval against a 100-step `changing_facts` checkpoint on Apple Silicon MPS. In that run, the trained checkpoint reached `0.6125` accuracy on `changing_facts` over 160 held-out examples; the other tasks remained low, which is expected because the checkpoint was not trained on the full suite.
+Continual benchmarking writes a seed-level CSV, aggregate JSON summary, full stage matrices, and final checkpoints. The checked compact artifact is in [`results/continual-benchmark`](results/continual-benchmark); large checkpoints remain ignored and reproducible from the documented command.
+
+## Current Result
+
+The checked CPU pilot uses three seeds, 100 updates per task, paired held-out batches, and models within a 1.064 largest/smallest parameter ratio. Mean final learned-task accuracy was 12.85% for ForgetNet, 13.13% for `no_forget`, and 11.04% for the local Transformer. Mean forgetting was 3.33%, 3.33%, and 1.88%, respectively.
+
+The 95% intervals overlap. Paired `no_forget - forgetnet` accuracy was +0.28 ± 1.06 percentage points, so this run does **not** support the learned erase gate. ForgetNet's +1.81-point accuracy difference over the size-matched Transformer also remains inconclusive (paired 95% half-width 3.39 points). The Transformer was roughly 5x faster in this local implementation.
+
+That is the useful result: the repo now has a protocol capable of falsifying the architectural thesis, and its first controlled pilot says the erase mechanism needs better evidence rather than stronger marketing.
+
+![ForgetNet parameter-matched continual benchmark](results/continual-benchmark/continual_benchmark.png)
 
 ![ForgetNet local sanity results](results/accuracy_by_task.png)
 
@@ -140,6 +177,8 @@ The repo intentionally starts with synthetic tasks because they make memory beha
 ## Limitations
 
 - The included experiments are small local sanity runs, not benchmark-scale claims.
+- The checked continual pilot has only three seeds and synthetic tasks; intervals are descriptive normal approximations.
+- Parameter counts are close, not exact, and equal update counts do not imply equal compute or wall time.
 - The memory update is differentiable hidden state, not persistent weight editing.
 - The synthetic tasks are diagnostic and can overstate real-world long-context ability.
 - The architecture is designed for inspection and ablation before throughput.
