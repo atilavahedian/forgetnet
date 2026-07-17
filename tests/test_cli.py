@@ -114,3 +114,41 @@ def test_continual_command_writes_retention_metrics(tmp_path: Path) -> None:
         "associative_lookup",
         "changing_facts",
     ]
+
+
+def test_benchmark_command_writes_model_comparison(tmp_path: Path) -> None:
+    main(
+        [
+            "benchmark",
+            "--models",
+            "forgetnet",
+            "--seeds",
+            "101",
+            "--tasks",
+            "changing_facts",
+            "--eval-tasks",
+            "changing_facts",
+            "--steps-per-task",
+            "1",
+            "--eval-steps",
+            "1",
+            "--batch-size",
+            "2",
+            "--seq-len",
+            "14",
+            "--d-model",
+            "8",
+            "--memory-slots",
+            "2",
+            "--max-seq-len",
+            "32",
+            "--device",
+            "cpu",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+
+    summary_path = next(tmp_path.glob("continual-benchmark-*/benchmark_summary.json"))
+    summary = json.loads(summary_path.read_text())
+    assert summary["run_count"] == 1

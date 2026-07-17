@@ -6,6 +6,7 @@ from pathlib import Path
 
 import torch
 
+from forgetnet.benchmark import BenchmarkConfig, run_benchmark
 from forgetnet.continual import ContinualConfig, run_continual
 from forgetnet.data import TASKS, make_task_batch
 from forgetnet.experiment import EvalConfig, ModelConfig, TrainConfig, evaluate, train
@@ -23,6 +24,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_train_parser(subparsers)
     _add_eval_parser(subparsers)
     _add_continual_parser(subparsers)
+    _add_benchmark_parser(subparsers)
     _add_plot_parser(subparsers)
     _add_demo_parser(subparsers)
     args = parser.parse_args(argv)
@@ -36,6 +38,9 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "continual":
         run_dir = run_continual(_continual_config(args))
         print(f"Wrote continual metrics to {run_dir / 'metrics.json'}")
+    elif args.command == "benchmark":
+        run_dir = run_benchmark(_benchmark_config(args))
+        print(f"Wrote benchmark summary to {run_dir / 'benchmark_summary.json'}")
     elif args.command == "plot":
         path = plot_runs(args.runs, args.output_dir)
         print(f"Wrote plot to {path}")
@@ -105,6 +110,29 @@ def _add_continual_parser(subparsers: argparse._SubParsersAction[argparse.Argume
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output-dir", default="runs")
     parser.add_argument("--quiet", action="store_true")
+    _add_common_model_args(parser)
+
+
+def _add_benchmark_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    parser = subparsers.add_parser(
+        "benchmark",
+        help="compare models under equal sequential-training and paired-evaluation budgets",
+    )
+    parser.add_argument("--models", default="forgetnet,no_forget,local_transformer")
+    parser.add_argument("--seeds", default="42,43,44")
+    parser.add_argument("--tasks", default=",".join(TASKS[:-1]))
+    parser.add_argument("--eval-tasks", default=",".join(TASKS))
+    parser.add_argument("--steps-per-task", type=int, default=100)
+    parser.add_argument("--eval-steps", type=int, default=5)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--seq-len", type=int, default=64)
+    parser.add_argument("--extrapolate-len", type=int, default=192)
+    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--aux-loss-weight", type=float, default=0.1)
+    parser.add_argument("--eval-seed", type=int, default=12_345)
+    parser.add_argument("--device", default="auto")
+    parser.add_argument("--output-dir", default="runs")
+    parser.add_argument("--show-progress", action="store_true")
     _add_common_model_args(parser)
 
 
@@ -182,6 +210,27 @@ def _continual_config(args: argparse.Namespace) -> ContinualConfig:
         device=args.device,
         output_dir=args.output_dir,
         quiet=args.quiet,
+        model_config=_model_config(args),
+    )
+
+
+def _benchmark_config(args: argparse.Namespace) -> BenchmarkConfig:
+    return BenchmarkConfig(
+        models=_csv_tasks(args.models),
+        seeds=tuple(int(seed.strip()) for seed in args.seeds.split(",") if seed.strip()),
+        task_sequence=_csv_tasks(args.tasks),
+        eval_tasks=_csv_tasks(args.eval_tasks),
+        steps_per_task=args.steps_per_task,
+        eval_steps=args.eval_steps,
+        batch_size=args.batch_size,
+        seq_len=args.seq_len,
+        extrapolate_len=args.extrapolate_len,
+        lr=args.lr,
+        aux_loss_weight=args.aux_loss_weight,
+        eval_seed=args.eval_seed,
+        device=args.device,
+        output_dir=args.output_dir,
+        quiet=not args.show_progress,
         model_config=_model_config(args),
     )
 
