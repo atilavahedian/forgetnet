@@ -14,7 +14,6 @@ from forgetnet.data import IGNORE_INDEX, QUERY_STABLE, QUERY_UPDATED, TaskBatch,
 from forgetnet.experiment import (
     ModelConfig,
     next_token_auxiliary_loss,
-    supervised_answer_accuracy,
     supervised_answer_loss,
 )
 from forgetnet.models import ModelOutput, build_model, count_parameters
@@ -43,6 +42,15 @@ class SelectiveConfig:
     model_config: ModelConfig = ModelConfig(model="cldm", max_seq_len=128)
 
 
+@dataclass(frozen=True)
+class SelectiveStepResult:
+    loss: torch.Tensor
+    answer_loss: torch.Tensor
+    auxiliary_loss: torch.Tensor
+    locality_loss: torch.Tensor
+    query_accuracy: torch.Tensor
+
+
 def run_selective(config: SelectiveConfig) -> Path:
     _validate_config(config)
     seed_everything(config.seed)
@@ -56,27 +64,21 @@ def run_selective(config: SelectiveConfig) -> Path:
     iterator = trange(config.steps, disable=config.quiet, desc="selective")
     for step in iterator:
         batch = _make_batch(config, config.seed + step, device)
-        output = model(batch.input_ids)
-        answer_loss = supervised_answer_loss(output, batch)
-        auxiliary_loss = next_token_auxiliary_loss(output.aux_logits, batch.input_ids)
-        locality_loss = counterfactual_locality_loss(output, batch)
-        loss = (
-            answer_loss
-            + config.aux_loss_weight * auxiliary_loss
-            + config.clr_loss_weight * locality_loss
+        step_result = selective_training_step(
+            model,
+            optimizer,
+            batch,
+            aux_loss_weight=config.aux_loss_weight,
+            clr_loss_weight=config.clr_loss_weight,
         )
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
 
         record = {
             "step": step + 1,
-            "loss": float(loss.detach().cpu()),
-            "answer_loss": float(answer_loss.detach().cpu()),
-            "auxiliary_loss": float(auxiliary_loss.detach().cpu()),
-            "locality_loss": float(locality_loss.detach().cpu()),
-            "query_accuracy": supervised_answer_accuracy(output, batch),
+            "loss": float(step_result.loss.cpu()),
+            "answer_loss": float(step_result.answer_loss.cpu()),
+            "auxiliary_loss": float(step_result.auxiliary_loss.cpu()),
+            "locality_loss": float(step_result.locality_loss.cpu()),
+            "query_accuracy": float(step_result.query_accuracy.cpu()),
         }
         history.append(record)
         if not config.quiet:
@@ -108,6 +110,49 @@ def run_selective(config: SelectiveConfig) -> Path:
         run_dir / "checkpoint.pt",
     )
     return run_dir
+
+
+def selective_training_step(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    batch: TaskBatch,
+    *,
+    aux_loss_weight: float,
+    clr_loss_weight: float,
+) -> SelectiveStepResult:
+    """Run the exact optimizer step shared by training and compute profiling."""
+
+    if min(aux_loss_weight, clr_loss_weight) < 0.0:
+        raise ValueError("loss weights must be nonnegative")
+    model.train()
+    output = model(batch.input_ids)
+    answer_loss = supervised_answer_loss(output, batch)
+    auxiliary_loss = next_token_auxiliary_loss(output.aux_logits, batch.input_ids)
+    locality_loss = counterfactual_locality_loss(output, batch)
+    loss = (
+        answer_loss
+        + aux_loss_weight * auxiliary_loss
+        + clr_loss_weight * locality_loss
+    )
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    optimizer.step()
+
+    if output.answer_logits is None:
+        raise ValueError("selective training requires per-token answer logits")
+    query_mask = batch.answer_targets != IGNORE_INDEX
+    query_accuracy = (
+        output.answer_logits.argmax(dim=-1)[query_mask]
+        == batch.answer_targets[query_mask]
+    ).float().mean()
+    return SelectiveStepResult(
+        loss=loss.detach(),
+        answer_loss=answer_loss.detach(),
+        auxiliary_loss=auxiliary_loss.detach(),
+        locality_loss=locality_loss.detach(),
+        query_accuracy=query_accuracy.detach(),
+    )
 
 
 def counterfactual_locality_loss(output: ModelOutput, batch: TaskBatch) -> torch.Tensor:

@@ -7,8 +7,8 @@ import torch
 
 from forgetnet.data import IGNORE_INDEX, QUERY_STABLE, TaskBatch, make_task_batch
 from forgetnet.experiment import supervised_answer_accuracy, supervised_answer_loss
-from forgetnet.models import MemoryStats, ModelOutput
-from forgetnet.selective import counterfactual_locality_loss
+from forgetnet.models import MemoryStats, ModelOutput, build_model
+from forgetnet.selective import counterfactual_locality_loss, selective_training_step
 
 
 def _output(answer_logits: torch.Tensor) -> ModelOutput:
@@ -113,3 +113,39 @@ def test_counterfactual_locality_rejects_unpaired_batches() -> None:
 
     with pytest.raises(ValueError, match="paired examples"):
         counterfactual_locality_loss(_output(logits), batch)
+
+
+def test_selective_training_step_is_shared_profileable_production_path() -> None:
+    batch = make_task_batch(
+        "conflict_stream",
+        batch_size=2,
+        seq_len=24,
+        seed=904,
+        window_size=2,
+        active_keys=2,
+        updates_per_key=1,
+        paired=True,
+    )
+    model = build_model(
+        "cldm",
+        vocab_size=batch.vocab_size,
+        d_model=8,
+        memory_slots=2,
+        window_size=2,
+        max_seq_len=32,
+        n_heads=2,
+    )
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    before = model.answer_head.weight.detach().clone()
+
+    result = selective_training_step(
+        model,
+        optimizer,
+        batch,
+        aux_loss_weight=0.05,
+        clr_loss_weight=0.1,
+    )
+
+    assert torch.isfinite(result.loss)
+    assert 0.0 <= result.query_accuracy.item() <= 1.0
+    assert not torch.equal(before, model.answer_head.weight)
