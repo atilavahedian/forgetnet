@@ -12,6 +12,7 @@ from forgetnet.data import TASKS, make_task_batch
 from forgetnet.experiment import EvalConfig, ModelConfig, TrainConfig, evaluate, train
 from forgetnet.models import build_model
 from forgetnet.runtime import seed_everything, select_device
+from forgetnet.selective import SelectiveConfig, run_selective
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -24,6 +25,7 @@ def main(argv: list[str] | None = None) -> None:
     _add_eval_parser(subparsers)
     _add_continual_parser(subparsers)
     _add_benchmark_parser(subparsers)
+    _add_selective_parser(subparsers)
     _add_plot_parser(subparsers)
     _add_plot_benchmark_parser(subparsers)
     _add_demo_parser(subparsers)
@@ -41,6 +43,9 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "benchmark":
         run_dir = run_benchmark(_benchmark_config(args))
         print(f"Wrote benchmark summary to {run_dir / 'benchmark_summary.json'}")
+    elif args.command == "selective":
+        run_dir = run_selective(_selective_config(args))
+        print(f"Wrote selective-memory run to {run_dir}")
     elif args.command == "plot":
         from forgetnet.plotting import plot_runs
 
@@ -146,6 +151,30 @@ def _add_benchmark_parser(subparsers: argparse._SubParsersAction[argparse.Argume
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output-dir", default="runs")
     parser.add_argument("--show-progress", action="store_true")
+    _add_common_model_args(parser)
+
+
+def _add_selective_parser(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    parser = subparsers.add_parser(
+        "selective",
+        help="train and evaluate multi-query selective memory on ConflictStream",
+    )
+    parser.add_argument("--steps", type=int, default=200)
+    parser.add_argument("--eval-steps", type=int, default=10)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--seq-len", type=int, default=60)
+    parser.add_argument("--active-keys", type=int, default=4)
+    parser.add_argument("--updates-per-key", type=int, default=2)
+    parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--aux-loss-weight", type=float, default=0.05)
+    parser.add_argument("--clr-loss-weight", type=float, default=0.1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--eval-seed", type=int, default=12_345)
+    parser.add_argument("--device", default="auto")
+    parser.add_argument("--output-dir", default="runs")
+    parser.add_argument("--quiet", action="store_true")
     _add_common_model_args(parser)
 
 
@@ -258,6 +287,26 @@ def _benchmark_config(args: argparse.Namespace) -> BenchmarkConfig:
         quiet=not args.show_progress,
         model_config=_model_config(args),
         model_widths=_model_widths(args.model_widths),
+    )
+
+
+def _selective_config(args: argparse.Namespace) -> SelectiveConfig:
+    return SelectiveConfig(
+        steps=args.steps,
+        eval_steps=args.eval_steps,
+        batch_size=args.batch_size,
+        seq_len=args.seq_len,
+        active_keys=args.active_keys,
+        updates_per_key=args.updates_per_key,
+        lr=args.lr,
+        aux_loss_weight=args.aux_loss_weight,
+        clr_loss_weight=args.clr_loss_weight,
+        seed=args.seed,
+        eval_seed=args.eval_seed,
+        device=args.device,
+        output_dir=args.output_dir,
+        quiet=args.quiet,
+        model_config=_model_config(args),
     )
 
 

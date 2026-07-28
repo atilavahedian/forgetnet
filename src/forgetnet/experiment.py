@@ -10,8 +10,14 @@ import torch
 import torch.nn.functional as F
 from tqdm import trange
 
-from forgetnet.data import DEFAULT_VOCAB_SIZE, TASKS, make_task_batch
-from forgetnet.models import build_model, count_parameters
+from forgetnet.data import (
+    DEFAULT_VOCAB_SIZE,
+    IGNORE_INDEX,
+    TASKS,
+    TaskBatch,
+    make_task_batch,
+)
+from forgetnet.models import ModelOutput, build_model, count_parameters
 from forgetnet.runtime import ensure_dir, seed_everything, select_device, to_jsonable
 
 
@@ -74,7 +80,7 @@ def train(config: TrainConfig) -> Path:
             vocab_size=config.model_config.vocab_size,
         ).to(device)
         output = model(batch.input_ids)
-        answer_loss = F.cross_entropy(output.logits, batch.labels)
+        answer_loss = supervised_answer_loss(output, batch)
         auxiliary_loss = next_token_auxiliary_loss(output.aux_logits, batch.input_ids)
         loss = answer_loss + config.aux_loss_weight * auxiliary_loss
         optimizer.zero_grad(set_to_none=True)
@@ -83,7 +89,7 @@ def train(config: TrainConfig) -> Path:
         optimizer.step()
 
         with torch.no_grad():
-            accuracy = (output.logits.argmax(dim=-1) == batch.labels).float().mean().item()
+            accuracy = supervised_answer_accuracy(output, batch)
         record = {
             "step": step + 1,
             "loss": float(loss.detach().cpu()),
@@ -134,6 +140,26 @@ def next_token_auxiliary_loss(aux_logits: torch.Tensor | None, input_ids: torch.
     return F.cross_entropy(predictions, targets)
 
 
+def supervised_answer_loss(output: ModelOutput, batch: TaskBatch) -> torch.Tensor:
+    if output.answer_logits is None:
+        return F.cross_entropy(output.logits, batch.labels)
+    mask = batch.answer_targets != IGNORE_INDEX
+    if not bool(mask.any()):
+        raise ValueError("batch has no supervised answer positions")
+    return F.cross_entropy(output.answer_logits[mask], batch.answer_targets[mask])
+
+
+def supervised_answer_accuracy(output: ModelOutput, batch: TaskBatch) -> float:
+    if output.answer_logits is None:
+        predictions = output.logits.argmax(dim=-1)
+        return float((predictions == batch.labels).float().mean().detach().cpu())
+    mask = batch.answer_targets != IGNORE_INDEX
+    predictions = output.answer_logits.argmax(dim=-1)
+    return float(
+        (predictions[mask] == batch.answer_targets[mask]).float().mean().detach().cpu()
+    )
+
+
 def evaluate(config: EvalConfig) -> Path:
     seed_everything(config.seed)
     device = select_device(config.device)
@@ -169,9 +195,17 @@ def evaluate(config: EvalConfig) -> Path:
                     vocab_size=model_config.vocab_size,
                 ).to(device)
                 output = model(batch.input_ids)
-                predictions = output.logits.argmax(dim=-1)
-                correct += int((predictions == batch.labels).sum().cpu())
-                total += int(batch.labels.numel())
+                if output.answer_logits is None:
+                    predictions = output.logits.argmax(dim=-1)
+                    correct += int((predictions == batch.labels).sum().cpu())
+                    total += int(batch.labels.numel())
+                else:
+                    mask = batch.answer_targets != IGNORE_INDEX
+                    predictions = output.answer_logits.argmax(dim=-1)
+                    correct += int(
+                        (predictions[mask] == batch.answer_targets[mask]).sum().cpu()
+                    )
+                    total += int(mask.sum().cpu())
                 write_strengths.append(output.memory_stats.mean_write_strength)
                 write_frequencies.append(output.memory_stats.write_frequency)
                 surprises.append(output.memory_stats.mean_surprise)

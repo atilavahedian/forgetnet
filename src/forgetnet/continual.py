@@ -7,11 +7,15 @@ import time
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 from tqdm import trange
 
-from forgetnet.data import TASKS, make_task_batch
-from forgetnet.experiment import ModelConfig, next_token_auxiliary_loss
+from forgetnet.data import IGNORE_INDEX, TASKS, make_task_batch
+from forgetnet.experiment import (
+    ModelConfig,
+    next_token_auxiliary_loss,
+    supervised_answer_accuracy,
+    supervised_answer_loss,
+)
 from forgetnet.models import build_model, count_parameters
 from forgetnet.runtime import seed_everything, select_device, to_jsonable
 
@@ -171,7 +175,7 @@ def _train_stage(
             vocab_size=config.model_config.vocab_size,
         ).to(device)
         output = model(batch.input_ids)
-        answer_loss = F.cross_entropy(output.logits, batch.labels)
+        answer_loss = supervised_answer_loss(output, batch)
         auxiliary_loss = next_token_auxiliary_loss(output.aux_logits, batch.input_ids)
         loss = answer_loss + config.aux_loss_weight * auxiliary_loss
         optimizer.zero_grad(set_to_none=True)
@@ -180,7 +184,7 @@ def _train_stage(
         optimizer.step()
 
         with torch.no_grad():
-            accuracy = (output.logits.argmax(dim=-1) == batch.labels).float().mean().item()
+            accuracy = supervised_answer_accuracy(output, batch)
         record = {
             "step": step + 1,
             "loss": float(loss.detach().cpu()),
@@ -224,8 +228,16 @@ def _evaluate_tasks(
                     vocab_size=config.model_config.vocab_size,
                 ).to(device)
                 output = model(batch.input_ids)
-                correct += int((output.logits.argmax(dim=-1) == batch.labels).sum().cpu())
-                total += int(batch.labels.numel())
+                if output.answer_logits is None:
+                    correct += int((output.logits.argmax(dim=-1) == batch.labels).sum().cpu())
+                    total += int(batch.labels.numel())
+                else:
+                    mask = batch.answer_targets != IGNORE_INDEX
+                    predictions = output.answer_logits.argmax(dim=-1)
+                    correct += int(
+                        (predictions[mask] == batch.answer_targets[mask]).sum().cpu()
+                    )
+                    total += int(mask.sum().cpu())
                 write_strengths.append(output.memory_stats.mean_write_strength)
                 write_frequencies.append(output.memory_stats.write_frequency)
                 surprises.append(output.memory_stats.mean_surprise)

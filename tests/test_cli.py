@@ -152,3 +152,49 @@ def test_benchmark_command_writes_model_comparison(tmp_path: Path) -> None:
     summary_path = next(tmp_path.glob("continual-benchmark-*/benchmark_summary.json"))
     summary = json.loads(summary_path.read_text())
     assert summary["run_count"] == 1
+
+
+def test_selective_command_writes_multi_query_metrics_and_checkpoint(
+    tmp_path: Path,
+) -> None:
+    main(
+        [
+            "selective",
+            "--model",
+            "cldm",
+            "--steps",
+            "1",
+            "--eval-steps",
+            "1",
+            "--batch-size",
+            "2",
+            "--seq-len",
+            "24",
+            "--active-keys",
+            "2",
+            "--updates-per-key",
+            "1",
+            "--d-model",
+            "8",
+            "--memory-slots",
+            "2",
+            "--window-size",
+            "2",
+            "--max-seq-len",
+            "32",
+            "--n-heads",
+            "2",
+            "--device",
+            "cpu",
+            "--output-dir",
+            str(tmp_path),
+            "--quiet",
+        ]
+    )
+
+    run_dir = next(tmp_path.glob("selective-cldm-*"))
+    metrics = json.loads((run_dir / "metrics.json").read_text())
+    assert (run_dir / "checkpoint.pt").exists()
+    assert metrics["protocol"] == "conflict-stream-equal-data-v1"
+    assert metrics["evaluation"]["queries"] == 4
+    assert metrics["evaluation"]["events"] > 0
