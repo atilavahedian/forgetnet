@@ -83,6 +83,7 @@ def make_task_batch(
     active_keys: int = 4,
     updates_per_key: int = 2,
     paired: bool = False,
+    minimum_query_lag: int | None = None,
 ) -> TaskBatch:
     if task == "all":
         raise ValueError("task='all' is only valid for evaluation orchestration")
@@ -105,6 +106,7 @@ def make_task_batch(
             active_keys=active_keys,
             updates_per_key=updates_per_key,
             paired=paired,
+            minimum_query_lag=minimum_query_lag,
         )
 
     rng = random.Random(seed)
@@ -311,6 +313,7 @@ def _make_conflict_stream_batch(
     active_keys: int,
     updates_per_key: int,
     paired: bool,
+    minimum_query_lag: int | None,
 ) -> TaskBatch:
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
@@ -322,6 +325,9 @@ def _make_conflict_stream_batch(
         raise ValueError("active_keys must be at least two and smaller than num_keys")
     if updates_per_key < 1:
         raise ValueError("updates_per_key must be positive")
+    required_query_lag = 2 * window_size if minimum_query_lag is None else minimum_query_lag
+    if required_query_lag < 2 * window_size:
+        raise ValueError("minimum_query_lag must cover the full local receptive field")
 
     rng = random.Random(seed)
     examples: list[_ConflictExample] = []
@@ -337,6 +343,7 @@ def _make_conflict_stream_batch(
             active_keys=active_keys,
             updates_per_key=updates_per_key,
             pair_id=pair_id,
+            minimum_query_lag=required_query_lag,
         )
         examples.append(first)
         if paired:
@@ -398,7 +405,7 @@ def _make_conflict_stream_batch(
             "updates_per_key": updates_per_key,
             "paired": paired,
             "max_stale_values": max_stale,
-            "minimum_query_lag_exclusive": 2 * window_size,
+            "minimum_query_lag_exclusive": required_query_lag,
         },
     )
 
@@ -413,12 +420,13 @@ def _make_conflict_pair(
     active_keys: int,
     updates_per_key: int,
     pair_id: int,
+    minimum_query_lag: int,
 ) -> tuple[_ConflictExample, _ConflictExample]:
     operation_count = seq_len // 3
     prefix_padding = seq_len - operation_count * 3
     conflict_count = max(1, active_keys // 2)
     query_count = active_keys
-    minimum_gap_operations = (2 * window_size + 2) // 3
+    minimum_gap_operations = (minimum_query_lag + 2) // 3
     required_operations = active_keys + conflict_count * updates_per_key + query_count
     filler_count = operation_count - required_operations
     if filler_count < minimum_gap_operations:

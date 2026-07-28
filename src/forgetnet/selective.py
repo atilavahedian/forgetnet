@@ -29,6 +29,9 @@ class SelectiveConfig:
     seq_len: int = 60
     active_keys: int = 4
     updates_per_key: int = 2
+    num_keys: int = 24
+    num_values: int = 48
+    minimum_query_lag: int | None = None
     lr: float = 3e-4
     aux_loss_weight: float = 0.05
     clr_loss_weight: float = 0.1
@@ -299,6 +302,9 @@ def _make_batch(
         active_keys=config.active_keys,
         updates_per_key=config.updates_per_key,
         paired=True,
+        num_keys=config.num_keys,
+        num_values=config.num_values,
+        minimum_query_lag=config.minimum_query_lag,
     ).to(device)
 
 
@@ -309,6 +315,11 @@ def _validate_config(config: SelectiveConfig) -> None:
         raise ValueError("batch_size must be a positive even number")
     if config.seq_len > config.model_config.max_seq_len:
         raise ValueError("seq_len exceeds model max_seq_len")
+    if (
+        config.minimum_query_lag is not None
+        and config.minimum_query_lag < 2 * config.model_config.window_size
+    ):
+        raise ValueError("minimum_query_lag must cover the full local receptive field")
     if min(config.aux_loss_weight, config.clr_loss_weight) < 0.0:
         raise ValueError("loss weights must be nonnegative")
 

@@ -64,8 +64,10 @@ class ConflictLocalizedMemoryCell(nn.Module):
 
     VARIANTS = {
         "cldm",
+        "cldm_entangled",
         "cldm_no_conflict",
         "cldm_no_replace",
+        "cldm_shuffled_conflict",
         "cldm_soft_route",
     }
 
@@ -237,6 +239,12 @@ class ConflictLocalizedMemoryCell(nn.Module):
             replacement = torch.ones_like(match_st)
         elif self.variant == "cldm_no_replace":
             replacement = 1.0 - match_st
+        elif self.variant == "cldm_shuffled_conflict":
+            replacement = (1.0 - match_st) + match_st * torch.roll(
+                conflict_gate,
+                shifts=1,
+                dims=0,
+            )
         else:
             replacement = (1.0 - match_st) + match_st * conflict_gate
         event = write_mask.float()
@@ -250,8 +258,13 @@ class ConflictLocalizedMemoryCell(nn.Module):
         )
 
         novel_event = event * (~match_hard).float()
-        key_rate = allocation_one_hot.unsqueeze(-1) * novel_event.view(-1, 1, 1)
-        new_keys = state.keys * (1.0 - key_rate) + key.unsqueeze(1) * key_rate
+        if self.variant == "cldm_entangled":
+            entangled_key = F.normalize(value.float(), dim=-1, eps=1e-6)
+            key_rate = route.unsqueeze(-1) * update_gate.view(-1, 1, 1)
+            new_keys = state.keys + key_rate * (entangled_key.unsqueeze(1) - state.keys)
+        else:
+            key_rate = allocation_one_hot.unsqueeze(-1) * novel_event.view(-1, 1, 1)
+            new_keys = state.keys * (1.0 - key_rate) + key.unsqueeze(1) * key_rate
         new_keys = F.normalize(new_keys, dim=-1, eps=1e-6)
         newly_occupied = allocation_one_hot.bool() & novel_event.bool().unsqueeze(-1)
         new_occupied = (state.occupied | newly_occupied).detach()

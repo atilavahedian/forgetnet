@@ -162,13 +162,50 @@ def test_cldm_variants_are_parameter_matched() -> None:
         )
         for name in (
             "cldm",
+            "cldm_entangled",
             "cldm_no_conflict",
             "cldm_no_replace",
+            "cldm_shuffled_conflict",
             "cldm_soft_route",
         )
     }
 
     assert len(set(counts.values())) == 1
+
+
+def test_cldm_entangled_ablation_overwrites_its_address_with_content() -> None:
+    cell = ConflictLocalizedMemoryCell(
+        d_model=4,
+        memory_slots=2,
+        variant="cldm_entangled",
+    )
+    state = cell.empty_state(1, device=torch.device("cpu"), dtype=torch.float32)
+    key = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+    value = torch.tensor([[0.0, 1.0, 0.0, 0.0]])
+
+    state, trace = cell.write(state, key, value, torch.tensor([True]))
+    slot = int(trace.slot_index[0])
+
+    assert F.cosine_similarity(state.keys[:, slot], value).item() > 0.99
+    assert F.cosine_similarity(state.keys[:, slot], key).item() < 0.01
+
+
+def test_shuffled_conflict_control_uses_another_streams_gate() -> None:
+    cell = ConflictLocalizedMemoryCell(
+        d_model=2,
+        memory_slots=1,
+        variant="cldm_shuffled_conflict",
+    )
+    state = cell.empty_state(2, device=torch.device("cpu"), dtype=torch.float32)
+    key = torch.tensor([[1.0, 0.0], [1.0, 0.0]])
+    initial = torch.tensor([[1.0, 0.0], [1.0, 0.0]])
+    state, _ = cell.write(state, key, initial, torch.tensor([True, True]))
+    changed = torch.tensor([[1.0, 0.0], [-1.0, 0.0]])
+    _, trace = cell.write(state, key, changed, torch.tensor([True, True]))
+
+    assert trace.conflict[0].item() < trace.conflict[1].item()
+    assert trace.write_gate[0].item() > 0.5
+    assert trace.write_gate[1].item() < 0.02
 
 
 def test_cldm_sequence_trace_and_gradients_follow_delayed_queries() -> None:

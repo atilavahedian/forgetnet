@@ -167,6 +167,9 @@ def _add_selective_parser(
     parser.add_argument("--seq-len", type=int, default=60)
     parser.add_argument("--active-keys", type=int, default=4)
     parser.add_argument("--updates-per-key", type=int, default=2)
+    parser.add_argument("--num-keys", type=int, default=24)
+    parser.add_argument("--num-values", type=int, default=48)
+    parser.add_argument("--minimum-query-lag", type=int)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--aux-loss-weight", type=float, default=0.05)
     parser.add_argument("--clr-loss-weight", type=float, default=0.1)
@@ -298,6 +301,9 @@ def _selective_config(args: argparse.Namespace) -> SelectiveConfig:
         seq_len=args.seq_len,
         active_keys=args.active_keys,
         updates_per_key=args.updates_per_key,
+        num_keys=args.num_keys,
+        num_values=args.num_values,
+        minimum_query_lag=args.minimum_query_lag,
         lr=args.lr,
         aux_loss_weight=args.aux_loss_weight,
         clr_loss_weight=args.clr_loss_weight,

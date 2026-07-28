@@ -198,3 +198,39 @@ def test_conflict_stream_is_deterministic_and_rejects_short_sequences() -> None:
             active_keys=4,
             updates_per_key=2,
         )
+
+
+def test_conflict_stream_supports_explicit_long_lag_and_capacity_stress() -> None:
+    minimum_lag = 32
+    batch = make_task_batch(
+        "conflict_stream",
+        batch_size=2,
+        seq_len=156,
+        seed=909,
+        num_keys=24,
+        num_values=48,
+        window_size=4,
+        active_keys=16,
+        updates_per_key=1,
+        paired=True,
+        minimum_query_lag=minimum_lag,
+    )
+    query_mask = batch.answer_targets != IGNORE_INDEX
+
+    assert torch.equal(conflict_oracle_targets(batch.input_ids), batch.answer_targets)
+    assert batch.metadata["active_keys"] == 16
+    assert batch.metadata["minimum_query_lag_exclusive"] == minimum_lag
+    assert (batch.lag_tokens[query_mask] > minimum_lag).all()
+
+    with pytest.raises(ValueError, match="full local receptive field"):
+        make_task_batch(
+            "conflict_stream",
+            batch_size=2,
+            seq_len=48,
+            seed=910,
+            window_size=4,
+            active_keys=4,
+            updates_per_key=1,
+            paired=True,
+            minimum_query_lag=7,
+        )
