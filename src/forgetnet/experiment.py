@@ -23,6 +23,7 @@ class ModelConfig:
     memory_slots: int = 16
     window_size: int = 8
     max_seq_len: int = 512
+    n_heads: int = 4
 
 
 @dataclass(frozen=True)

@@ -63,6 +63,7 @@ def _add_common_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--memory-slots", type=int, default=16)
     parser.add_argument("--window-size", type=int, default=8)
     parser.add_argument("--max-seq-len", type=int, default=512)
+    parser.add_argument("--n-heads", type=int, default=4)
 
 
 def _add_train_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -183,6 +184,7 @@ def _model_config(args: argparse.Namespace) -> ModelConfig:
         memory_slots=args.memory_slots,
         window_size=args.window_size,
         max_seq_len=args.max_seq_len,
+        n_heads=args.n_heads,
     )
 
 
