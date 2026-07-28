@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 
 from forgetnet.benchmark import BenchmarkConfig, run_benchmark
-from forgetnet.continual import ContinualConfig, run_continual
+from forgetnet.continual import DEFAULT_CONTINUAL_TASKS, ContinualConfig, run_continual
 from forgetnet.data import TASKS, make_task_batch
 from forgetnet.experiment import EvalConfig, ModelConfig, TrainConfig, evaluate, train
 from forgetnet.models import build_model
@@ -101,7 +101,7 @@ def _add_continual_parser(subparsers: argparse._SubParsersAction[argparse.Argume
     )
     parser.add_argument(
         "--tasks",
-        default=",".join(TASKS[:-1]),
+        default=",".join(DEFAULT_CONTINUAL_TASKS),
         help="comma-separated training sequence",
     )
     parser.add_argument("--eval-tasks", default=",".join(TASKS))
@@ -132,7 +132,7 @@ def _add_benchmark_parser(subparsers: argparse._SubParsersAction[argparse.Argume
         help="optional model=width pairs, for example forgetnet=64,local_transformer=48",
     )
     parser.add_argument("--seeds", default="42,43,44")
-    parser.add_argument("--tasks", default=",".join(TASKS[:-1]))
+    parser.add_argument("--tasks", default=",".join(DEFAULT_CONTINUAL_TASKS))
     parser.add_argument("--eval-tasks", default=",".join(TASKS))
     parser.add_argument("--steps-per-task", type=int, default=100)
     parser.add_argument("--eval-steps", type=int, default=5)

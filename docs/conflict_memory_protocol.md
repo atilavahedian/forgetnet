@@ -122,9 +122,9 @@ QUERY(key)
 
 Each sequence contains multiple labelled queries. It includes stable keys,
 keys updated one or more times, unqueried distractor keys, and a randomized
-event schedule. Every confirmatory query must be at least `2 * window_size`
-tokens after the last relevant `SET`, so local attention cannot read the answer
-directly.
+event schedule. Every confirmatory query must be strictly more than
+`local_layers * window_size` tokens after the last relevant `SET`, so stacked
+local-attention layers cannot propagate the answer to the query.
 
 The generator records, for every query:
 
@@ -143,7 +143,8 @@ The benchmark is invalid unless all gates pass:
 1. A deterministic last-write-wins oracle scores 100% on every generated split.
 2. A fixed-position and local-tail oracle cannot recover the target above
    chance on conflict queries.
-3. Every evaluated relevant event lies outside the declared local window.
+3. Every evaluated relevant event lies outside the full stacked local receptive
+   field, not merely one layer's window.
 4. Counterfactual pairs differ only in the designated update value and their
    derived labels/metadata.
 5. Generation is deterministic for a fixed seed.
@@ -169,8 +170,8 @@ Primary outcomes are computed over query events, not whole sequences:
 - **stale intrusion rate:** fraction of changed-key queries where a prior value
   is predicted;
 - **stale probability:** probability mass assigned to prior values;
-- **collateral damage:** paired stable-query accuracy change caused by an
-  unrelated update;
+- **collateral sensitivity:** disagreement and symmetric probability shift at
+  paired stable-key queries when only an unrelated update value changes;
 - **query NLL and multiclass Brier score.**
 
 Mechanistic and efficiency outcomes:

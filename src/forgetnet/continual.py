@@ -15,7 +15,12 @@ from forgetnet.experiment import ModelConfig, next_token_auxiliary_loss
 from forgetnet.models import build_model, count_parameters
 from forgetnet.runtime import seed_everything, select_device, to_jsonable
 
-DEFAULT_CONTINUAL_TASKS = TASKS[:-1]
+DEFAULT_CONTINUAL_TASKS = (
+    "associative_lookup",
+    "changing_facts",
+    "needle_recall",
+    "multi_hop",
+)
 
 
 @dataclass(frozen=True)
